@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+.build-deps/
+.runtime/
+build/
+dist/
+*.spec
+.venv/
+test-results/
+.wifidrop/
+received/
+.env
+.env.*
+.DS_Store
+
+# Separate project kept in the same local workspace.
+/zhishi-notes/
+/shizhi-*
+/拾知-*.zip
+

@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#164d40">
+  <title>近传 · 局域网房间</title>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/room.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="近传首页"><img src="/icon.svg" width="42" height="42" alt=""><span>近传<small>WiFiDrop</small></span></a>
+      <nav class="navigation" aria-label="主导航">
+        <button class="nav-item active" data-view="transfer"><span data-icon="arrows"></span>传输房间</button>
+        <button class="nav-item" data-view="help"><span data-icon="help"></span>使用指南</button>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <header class="topbar"><span id="breadcrumb">传输房间</span><span class="connection-pill" id="connection-status" role="status"><i></i><span>正在连接</span></span></header>
+
+      <section id="connect-view" class="connect-view" hidden>
+        <h1>加入局域网房间</h1><p>将设备连到同一局域网，输入主机页面上的六位连接码。</p>
+        <form id="join-form" class="join-form">
+          <label for="device-name">这台设备的名字</label>
+          <input id="device-name" name="name" maxlength="40" autocomplete="nickname" placeholder="例如：书房的 Mac">
+          <label for="pair-code">六位连接码</label>
+          <input id="pair-code" name="code" class="code-input" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="000000" required>
+          <button class="button primary" id="join-button" type="submit">加入房间 <span data-icon="arrow-right"></span></button>
+          <p id="join-error" class="form-error" role="alert"></p>
+        </form>
+      </section>
+
+      <section id="transfer-view" hidden>
+        <div class="page-heading"><h1>局域网房间</h1><p id="room-host"></p></div>
+        <div class="workspace-grid">
+          <div class="transfer-column">
+            <section class="card send-card" aria-labelledby="messages-heading">
+              <div class="section-top"><h2 id="messages-heading">消息</h2><span class="count" id="message-count">0</span></div>
+              <div id="message-list" class="message-list" role="log" aria-live="off" aria-label="收发消息记录" tabindex="0"></div>
+              <div id="empty-messages" class="empty-state"><span data-icon="chat"></span><p>暂无消息</p></div>
+              <div class="composer">
+                <div class="destination">
+                  <span data-icon="send"></span><label for="target-select">收件人</label>
+                  <select id="target-select" aria-label="选择接收设备"></select>
+                </div>
+                <form id="message-form">
+                  <label for="message-input" class="sr-only">消息内容</label>
+                  <textarea id="message-input" name="message" rows="2" maxlength="4000" placeholder="输入消息…" required></textarea>
+                  <div class="compose-tools">
+                    <div id="drop-zone" class="drop-zone">
+                      <button class="button secondary" id="choose-files" type="button"><span data-icon="file"></span>发送文件</button>
+                      <input id="file-input" type="file" multiple hidden>
+                    </div>
+                    <button class="button primary" id="send-message" type="submit" disabled><span data-icon="send"></span>发送消息</button>
+                  </div>
+                </form>
+                <p id="recipient-note" class="recipient-note"></p>
+                <p id="message-status" class="form-error" role="status"></p>
+                <div id="upload-queue" class="upload-queue" aria-label="文件发送进度"></div>
+              </div>
+            </section>
+
+            <section class="card files-card" aria-labelledby="files-heading">
+              <div class="section-top"><h2 id="files-heading">文件 <span class="count" id="file-count">0</span></h2><button class="icon-button" id="refresh-files" type="button" aria-label="刷新文件列表" title="刷新"><span data-icon="refresh"></span></button></div>
+              <div class="files-toolbar">
+                <div class="filter-tabs" aria-label="筛选文件"><button class="selected" data-filter="all">全部</button><button data-filter="received">收到的</button><button data-filter="sent">发出的</button></div>
+                <label class="search-box"><span data-icon="search"></span><input id="file-search" type="search" placeholder="查找文件" aria-label="查找文件"></label>
+              </div>
+              <div id="file-list" class="file-list"></div>
+              <div class="empty-state" id="empty-files"><span data-icon="inbox"></span><h3>暂无文件</h3><p>发送或收到的文件会出现在这里。</p></div>
+              <div class="files-footer"><span>文件保存在房间主机上</span><button class="text-button" id="open-folder" hidden>打开接收文件夹 <span data-icon="arrow-up-right"></span></button></div>
+            </section>
+          </div>
+
+          <aside class="connection-column">
+            <section class="card devices-card" aria-labelledby="devices-heading">
+              <div class="section-top"><h2 id="devices-heading">房间设备</h2><span class="count" id="device-count">1</span></div>
+              <div id="device-list"></div>
+            </section>
+            <section class="connect-card" id="qr-card" hidden>
+              <div class="section-top"><h2>邀请设备</h2><span data-icon="wifi"></span></div>
+              <p>扫码加入，或在浏览器输入下方地址。</p>
+              <div class="qr-wrap"><img id="qr-image" alt="加入房间的二维码" width="190" height="190" hidden><span id="qr-placeholder">正在获取局域网地址…</span></div>
+              <div class="pairing-code"><span>连接码</span><strong id="pairing-code">------</strong></div>
+              <div class="address-row"><select id="address-select" aria-label="选择局域网地址"></select><button class="icon-button light" id="copy-link" title="复制邀请链接" aria-label="复制邀请链接"><span data-icon="copy"></span></button></div>
+              <div class="device-actions" id="invite-actions" hidden><button class="text-button" id="toggle-invites">暂停新设备连接</button><button class="text-button" id="rotate-invite">更新连接码</button></div>
+            </section>
+            <div class="host-controls" id="host-controls" hidden><span id="storage-info"></span><button class="text-button" id="shutdown"><span data-icon="power"></span>退出近传</button></div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="help-view" class="help-view" hidden>
+        <h1>使用指南</h1>
+        <article class="card help-details">
+          <details open><summary>如何让多台设备加入同一个房间？</summary><p>在一台 Windows 或 Mac 电脑上启动近传并保持运行。其他电脑、手机和平板接入同一局域网，用浏览器打开主机显示的地址并输入连接码，也可以扫码加入。其他电脑直接加入已有房间即可。</p></details>
+          <details><summary>怎样发给特定设备或整个房间？</summary><p>在「收件人」中选一台设备，或点击设备列表中的发送图标。输入文字后点「发送消息」，也可以点「发送文件」多选文件。电脑支持直接拖入文件。选择「整个房间」时，新加入房间的设备也能看到保留的群发内容。消息和文件列表会注明发送和接收设备。</p></details>
+          <details><summary>文件、安装包和视频保存在哪里？</summary><p>主机把文件副本保存在用户的「下载 / WiFiDrop」目录。接收设备点击下载后，由浏览器保存。iPhone 可在「文件」App 的下载项中查找。近传会原样传输图片、视频、文档或 APK 等安装包。能否播放或安装取决于接收设备系统。</p></details>
+          <details><summary>大文件中断后如何继续？</summary><p>传输时尽量让浏览器保持前台。中断后点「继续」。如果已刷新或关闭页面，在原来的浏览器中选择相同收件人，再选择同一原文件，即可续传已确认的分块。可用空间、浏览器和文件系统会影响可传输的大小。</p></details>
+          <details><summary>谁可以看到消息和文件？</summary><p>单发内容显示在收发双方的页面，群发内容显示给房间成员。内容由房间主机中转和保存，主机的使用者可以访问磁盘上的内容。近传使用局域网 HTTP，请在可信网络中使用，并只向信任的人分享二维码和连接码。</p></details>
+          <details><summary>设备连不上，或页面不再更新？</summary><p>确认各设备连接同一路由器。主机可以使用网线，其他设备可以使用 Wi-Fi。尝试切换主机二维码下的局域网地址，检查本地网络权限、防火墙、VPN 和访客网络隔离。关闭主机浏览器后，后台服务仍会运行，点「退出近传」才会结束房间服务。</p></details>
+          <details><summary>删除文件会影响哪些设备？</summary><p>「删除」会移除主机保存的这份副本，接收设备将不能继续下载。发送时选择的原文件和已经下载的副本仍然保留。</p></details>
+        </article>
+      </section>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="confirm-dialog"><form method="dialog"><h2 id="confirm-title">确认操作</h2><p id="confirm-description"></p><div class="dialog-actions"><button class="button secondary" value="cancel">取消</button><button class="button primary" value="confirm">确认</button></div></form></dialog>
+  <div class="drag-overlay" id="drag-overlay" hidden><span data-icon="upload"></span><h2 id="drag-label">松开发送文件</h2></div>
+</body>
+</html>
