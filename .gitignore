@@ -7,6 +7,7 @@ dist/
 *.spec
 .venv/
 test-results/
+.taste-skill/
 .wifidrop/
 received/
 .env

@@ -31,7 +31,12 @@ RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 STATIC_FILES = {"/": ("index.html", "text/html; charset=utf-8"),
                 "/app.js": ("app.js", "text/javascript; charset=utf-8"),
                 "/style.css": ("style.css", "text/css; charset=utf-8"),
-                "/room.css": ("room.css", "text/css; charset=utf-8"),
+                "/motion.css": ("motion.css", "text/css; charset=utf-8"),
+                "/motion.js": ("motion.js", "text/javascript; charset=utf-8"),
+                "/moments/moments.js": ("moments/moments.js", "text/javascript; charset=utf-8"),
+                "/moments/lib.js": ("moments/lib.js", "text/javascript; charset=utf-8"),
+                "/moments/liquid-type/moment.js": ("moments/liquid-type/moment.js", "text/javascript; charset=utf-8"),
+                "/moments/liquid-type/moment.css": ("moments/liquid-type/moment.css", "text/css; charset=utf-8"),
                 "/icon.svg": ("icon.svg", "image/svg+xml")}
 
 

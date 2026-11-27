@@ -2,6 +2,7 @@
 import hashlib
 import os
 from pathlib import Path
+import re
 import sys
 import tempfile
 import threading
@@ -12,10 +13,15 @@ from playwright.sync_api import sync_playwright, expect
 import app
 
 
-def select_recipient(page, name):
-    option = page.locator('#target-select option').filter(has_text=name)
+def open_view(page, view):
+    page.locator(f'.nav-item[data-view="{view}"]').click()
+    expect(page.locator(f'#{view}-view')).to_be_visible()
+
+
+def select_recipient(page, name, selector='#target-select'):
+    option = page.locator(f'{selector} option').filter(has_text=name)
     expect(option).to_have_count(1)
-    page.locator('#target-select').select_option(option.get_attribute('value'))
+    page.locator(selector).select_option(option.get_attribute('value'))
 
 
 def send_message(page, message):
@@ -28,6 +34,7 @@ def exercise_peer_delivery(host, iphone, android, mac):
     reply = 'iPhone 已收到私信'
     shared = '四台设备集合'
     recipient_name = '我的 iPhone'
+    open_view(iphone, 'messages')
     select_recipient(android, recipient_name)
     send_message(android, private)
     received = iphone.locator('#message-list .message-row').filter(has_text=private)
@@ -38,7 +45,12 @@ def exercise_peer_delivery(host, iphone, android, mac):
 
     attachment = b'\x00PK\xff\x00device to device' * 1200
     filename = '设备安装包.apk'
+    open_view(android, 'devices')
+    android.get_by_role('button', name='给 我的 iPhone 发文件', exact=True).click()
+    expect(android.locator('#files-view')).to_be_visible()
+    expect(android.locator('#file-target-select option:checked')).to_have_text(recipient_name)
     android.locator('#file-input').set_input_files({'name':filename,'mimeType':'application/octet-stream','buffer':attachment})
+    open_view(iphone, 'files')
     with iphone.expect_download() as event:
         iphone.get_by_role('button',name='下载 ' + filename,exact=True).click(timeout=10000)
     download = event.value
@@ -48,6 +60,7 @@ def exercise_peer_delivery(host, iphone, android, mac):
     mac.locator('#target-select').select_option('all')
     send_message(mac, shared)
     for page in (host, iphone, android, mac):
+        open_view(page, 'messages')
         expect(page.locator('.message-text', has_text=shared)).to_have_count(1, timeout=7000)
     for outsider in (host, mac):
         expect(outsider.locator('.message-text', has_text=private)).to_have_count(0)
@@ -77,6 +90,11 @@ def main():
                 desktop.on('pageerror',lambda error: errors.append(str(error)))
                 desktop.goto(origin + '/#admin=' + room.admin_token)
                 expect(desktop.locator('#transfer-view')).to_be_visible()
+                expect(desktop.locator('#messages-view')).to_be_visible()
+                expect(desktop.locator('#files-view')).to_be_hidden()
+                desktop.screenshot(path=str(output/'desktop-chat-empty.png'),full_page=True)
+                desktop.locator('#invite-shortcut').click()
+                expect(desktop.locator('#devices-view')).to_be_visible()
                 expect(desktop.locator('#qr-image')).to_be_visible()
                 expect(desktop.locator('#pairing-code')).to_have_text(room.pair_code)
                 assert desktop.evaluate('location.hash') == ''
@@ -91,6 +109,9 @@ def main():
                 assert phone.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
                 assert phone.locator('#qr-card').is_hidden()
                 expect(desktop.locator('#device-count')).to_have_text('2',timeout=7000)
+                desktop.screenshot(path=str(output/'desktop-devices.png'),full_page=True)
+                open_view(desktop, 'files')
+                open_view(phone, 'files')
 
                 video = b'WiFiDrop-video\x00\xff' * 400000
                 desktop.locator('#file-input').set_input_files({'name':'旅行原片.MKV','mimeType':'application/octet-stream','buffer':video})
@@ -133,6 +154,7 @@ def main():
                 expect(phone.locator('.upload-item').last).to_contain_text('网络中断',timeout=30000)
                 phone.reload()
                 expect(phone.locator('#transfer-view')).to_be_visible()
+                expect(phone.locator('#files-view')).to_be_visible()
                 phone.locator('#file-input').set_input_files(str(original))
                 expect(phone.locator('.upload-item').last).to_contain_text('已送达',timeout=30000)
                 resumed = [r for r in room.records.values() if r['name']=='刷新续传.bin']
@@ -150,11 +172,13 @@ def main():
                 phone.locator('[data-filter="received"]').click()
                 expect(phone.locator('.file-row')).to_have_count(1)
                 phone.locator('[data-filter="all"]').click()
-                phone.screenshot(path=str(output/'phone.png'),full_page=True)
-                desktop.screenshot(path=str(output/'desktop.png'),full_page=True)
-                for width in (360,390,768,1024,1440):
+                phone.screenshot(path=str(output/'phone-files.png'),full_page=True)
+                desktop.screenshot(path=str(output/'desktop-files.png'),full_page=True)
+                for width in (320,390,768,1024,1440):
                     desktop.set_viewport_size({'width':width,'height':1000})
-                    assert desktop.evaluate('document.documentElement.scrollWidth <= window.innerWidth'),f'overflow at {width}'
+                    for view in ('messages', 'files', 'devices'):
+                        open_view(desktop, view)
+                        assert desktop.evaluate('document.documentElement.scrollWidth <= window.innerWidth'),f'{view} overflow at {width}'
                 desktop.set_viewport_size({'width':1440,'height':1100})
 
                 # Manual six-digit pairing in a fresh, untrusted browser context.
@@ -162,6 +186,8 @@ def main():
                 other = other_context.new_page(); other.goto(origin)
                 other.on('pageerror',lambda error: errors.append(str(error)))
                 expect(other.locator('#join-form')).to_be_visible()
+                expect(other.locator('#connect-view')).to_have_class(re.compile(r'\bis-entered\b'))
+                other.screenshot(path=str(output/'phone-join.png'),full_page=True)
                 other.locator('#pair-code').fill(room.pair_code)
                 other.locator('#device-name').fill('手动连接设备')
                 other.locator('#join-button').click()
@@ -174,14 +200,17 @@ def main():
                 mac.goto(origin + '/#join=' + room.invite_token)
                 expect(mac.locator('#transfer-view')).to_be_visible()
                 exercise_peer_delivery(desktop, phone, other, mac)
+                phone.screenshot(path=str(output/'phone-chat.png'),full_page=True)
+                desktop.screenshot(path=str(output/'desktop-chat.png'),full_page=True)
 
+                open_view(desktop, 'files')
                 desktop.get_by_role('button',name='删除 会议记录.txt',exact=True).click()
                 expect(desktop.locator('#confirm-dialog')).to_be_visible()
                 desktop.locator('#confirm-dialog button[value="confirm"]').click()
                 expect(desktop.locator('.file-row')).to_have_count(5,timeout=7000)
                 desktop.locator('[data-view="help"]').click()
                 expect(desktop.locator('#help-view')).to_be_visible()
-                desktop.locator('[data-view="transfer"]').click()
+                open_view(desktop, 'messages')
                 assert not errors,errors
                 browser.close()
             print('PASS: four isolated Chromium sessions, peer messaging and replies, broadcast, private APK download, binary integrity, upload resume, pairing, deletion and responsive layouts.')

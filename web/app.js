@@ -19,6 +19,8 @@ const paths = {
   phone: '<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 5h4m-3 14h2"/>',
   tablet: '<rect x="3" y="2" width="18" height="20" rx="3"/><path d="M11 19h2"/>',
   chat: '<path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 3v-3a2 2 0 0 1-1-2V6a2 2 0 0 1 2-2Z"/><path d="M7 9h10M7 13h7"/>',
+  folder: '<path d="M3 19V6a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"/>',
+  devices: '<path d="M12 18H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v3M5 21h7"/><rect x="14" y="11" width="7" height="10" rx="1.5"/><path d="M17.5 18h.01"/>',
   leaf: '<path d="M20 3C8 2 2 8 6 16c8 5 15-2 14-13ZM4 21 16 9M9 16v-5m0 5h5"/>',
   sparkles: '<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Zm7-2 .8 2.2L22 4l-2.2.8L19 7l-.8-2.2L16 4l2.2-.8L19 1Z"/>',
   'arrow-up-right': '<path d="M6 18 18 6M6 6h12v12"/>',
@@ -41,7 +43,12 @@ const storage = {
 };
 let token = storage.get('token', '');
 let state = null;
-let currentView = 'transfer';
+const roomViews = ['messages', 'files', 'devices'];
+let currentView = 'messages';
+try {
+  const savedView = sessionStorage.getItem('wifidrop:view');
+  if (roomViews.includes(savedView)) currentView = savedView;
+} catch { /* Session storage is optional. */ }
 let currentFilter = 'all';
 let stateTimer;
 let toastTimer;
@@ -111,15 +118,32 @@ function typeFor(name) {
 }
 function connection(online, text) {
   $('connection-status').classList.toggle('offline', !online);
-  $('connection-status').querySelector('span').textContent = text;
+  const label = $('connection-status').querySelector('span');
+  if (label.textContent !== text) label.textContent = text;
 }
 function setView(view) {
   currentView = view;
-  $('transfer-view').hidden = view !== 'transfer' || !state;
-  $('connect-view').hidden = view !== 'transfer' || Boolean(state);
-  $('help-view').hidden = view !== 'help';
-  $('breadcrumb').textContent = view === 'help' ? '使用指南' : '传输房间';
-  document.querySelectorAll('[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === view));
+  const help = view === 'help';
+  document.body.classList.toggle('room-connected', Boolean(state));
+  $('transfer-view').hidden = help || !state || stopped;
+  $('connect-view').hidden = help || Boolean(state) || stopped;
+  $('help-view').hidden = !help;
+  $('stopped-view').hidden = !stopped || help;
+  $('invite-shortcut').hidden = !state?.me.admin || view === 'devices' || stopped;
+  $('breadcrumb').textContent = help ? '使用指南' : '局域网房间';
+  for (const id of roomViews) $(id + '-view').hidden = view !== id;
+  document.querySelectorAll('.nav-item[data-view]').forEach(button => {
+    button.disabled = button.dataset.view !== 'help' && (!state || stopped);
+    if (button.dataset.view === view && !button.disabled) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+}
+function openView(view) {
+  setView(view);
+  if (roomViews.includes(view)) {
+    try { sessionStorage.setItem('wifidrop:view', view); } catch { /* Session storage is optional. */ }
+  }
+  window.scrollTo(0, 0);
 }
 function requireConnection(message) {
   state = null; setView(currentView); connection(false, '尚未连接');
@@ -181,7 +205,6 @@ function deviceLabel(id, fallback) {
 }
 
 function renderRecipients() {
-  const select = $('target-select');
   const targets = [
     {id:'all', label:'整个房间'},
     ...roomDevices.filter(device => device.id !== state.me.id)
@@ -197,20 +220,22 @@ function renderRecipients() {
     targets.unshift({id:'', label:'原收件人已移除，请重新选择'});
   }
   const signature = JSON.stringify(targets);
-  if (select.dataset.signature !== signature) {
-    select.replaceChildren(...targets.map(target => {
-      const option = el('option', '', target.label);
-      option.value = target.id;
-      option.disabled = !target.id;
-      return option;
-    }));
-    select.dataset.signature = signature;
+  for (const select of [$('target-select'), $('file-target-select')]) {
+    if (select.dataset.signature !== signature) {
+      select.replaceChildren(...targets.map(target => {
+        const option = el('option', '', target.label);
+        option.value = target.id;
+        option.disabled = !target.id;
+        return option;
+      }));
+      select.dataset.signature = signature;
+    }
+    if (select.value !== selectedTarget) select.value = selectedTarget;
   }
-  select.value = selectedTarget;
   updateComposer();
 }
 
-function selectRecipient(id, focus = false) {
+function selectRecipient(id, destinationView) {
   if (!state || id === state.me.id || (id !== 'all' && !roomDevices.some(device => device.id === id))) {
     toast('这台设备已移除，请选择其他收件人');
     return;
@@ -218,16 +243,19 @@ function selectRecipient(id, focus = false) {
   selectedTarget = id;
   storage.set('target:' + state.me.id, id);
   $('target-select').value = id;
+  $('file-target-select').value = id;
   $('message-status').textContent = '';
   updateComposer();
-  if (focus) $('message-input').focus();
+  if (destinationView) {
+    openView(destinationView);
+    $(destinationView === 'messages' ? 'message-input' : 'choose-files').focus({preventScroll:true});
+  }
 }
 
 function updateComposer() {
-  const note = !selectedTarget ? '请选择收件人。'
-    : selectedTarget === 'all' ? '文字和文件将分享给整个房间，包括之后加入的设备。'
-    : '文字和文件将发给「' + deviceLabel(selectedTarget) + '」。';
-  $('recipient-note').textContent = note;
+  const roomNote = '整个房间可见，包括之后加入的设备。';
+  $('recipient-note').textContent = !selectedTarget ? '请选择收件人。' : selectedTarget === 'all' ? roomNote : '只有收发双方的页面会显示这条消息。';
+  $('file-recipient-note').textContent = !selectedTarget ? '请选择收件人。' : selectedTarget === 'all' ? roomNote : '收件人可在「文件」中下载。';
   $('send-message').disabled = !state || !selectedTarget || sendingMessage || !$('message-input').value.trim();
   $('choose-files').disabled = !state || !selectedTarget;
   $('drag-label').textContent = selectedTarget ? '松开发送给' + deviceLabel(selectedTarget) : '请先选择收件人';
@@ -280,11 +308,10 @@ function renderMessages() {
   if (messageSignature === signature) return;
   messageSignature = signature;
   const list = $('message-list');
-  const followLatest = list.scrollHeight - list.clientHeight - list.scrollTop < 24;
+  const followLatest = list.clientHeight === 0 || list.scrollHeight - list.clientHeight - list.scrollTop < 24;
   const previousScroll = list.scrollTop;
   list.hidden = !messages.length;
   $('empty-messages').hidden = Boolean(messages.length);
-  $('message-count').textContent = messages.length;
   list.replaceChildren(...messages.map(message => {
     const own = message.owner === state.me.id;
     const row = el('article', own ? 'message-row own' : 'message-row');
@@ -305,7 +332,7 @@ function renderMessages() {
         const reply = el('button','text-button message-reply',target === 'all' ? '回复房间' : '回复');
         reply.type = 'button';
         reply.dataset.reply = target;
-        reply.addEventListener('click', () => selectRecipient(target, true));
+        reply.addEventListener('click', () => selectRecipient(target, 'messages'));
         content.append(reply);
       }
     }
@@ -349,7 +376,13 @@ function renderDevices() {
     const active = device.id === 'host' || Date.now()/1000 - device.seen < 30;
     const detail = el('div','device-detail'); detail.append(el('i', active ? '' : 'away'), document.createTextNode(device.id === 'host' ? '房间主机' : active ? '在线' : '暂未活动'));
     info.append(name,detail); row.append(info);
-    if (device.id !== state.me.id) row.append(iconButton('send', '发给 ' + deviceLabel(device.id), () => selectRecipient(device.id, true)));
+    if (device.id !== state.me.id) {
+      const name = deviceLabel(device.id);
+      row.append(
+        iconButton('chat', '给 ' + name + ' 发消息', () => selectRecipient(device.id, 'messages')),
+        iconButton('upload', '给 ' + name + ' 发文件', () => selectRecipient(device.id, 'files'))
+      );
+    }
     if (state.me.admin && device.id !== 'host') row.append(iconButton('close','移除设备',async () => {
       if (!await confirmAction('移除这台设备？', `${device.name} 将断开连接，需要重新扫码才能继续使用。`)) return;
       try { await api('/api/devices/' + device.id, {method:'DELETE'}); await poll(); toast('设备已移除'); } catch (error) { toast(error.message); }
@@ -379,7 +412,8 @@ function renderFiles(force = false) {
     const sent = file.owner === state.me.id;
     const meta = el('div','file-meta');
     const date = new Date(file.created * 1000);
-    meta.append(el('span','',formatBytes(file.size)), el('span','file-route',routeLabel(file)), el('span','',date.toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})));
+    const timestamp = date.toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+    meta.append(el('span','file-route',routeLabel(file)), el('span','',formatBytes(file.size) + ' · ' + timestamp));
     info.append(name,meta); if (file.sha256) info.title = 'SHA-256: ' + file.sha256;
     const actions = el('div','file-actions');
     actions.append(iconButton('download','下载 ' + file.name,async () => {
@@ -573,14 +607,20 @@ async function copyText(text) {
   }
 }
 
-document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click',() => setView(button.dataset.view)));
+document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click',() => openView(button.dataset.view)));
+$('invite-shortcut').addEventListener('click', () => openView('devices'));
 document.querySelectorAll('[data-filter]').forEach(button => button.addEventListener('click',() => {
   currentFilter = button.dataset.filter;
-  document.querySelectorAll('[data-filter]').forEach(other => other.classList.toggle('selected',other === button)); renderFiles(true);
+  document.querySelectorAll('[data-filter]').forEach(other => {
+    other.classList.toggle('selected', other === button);
+    other.setAttribute('aria-pressed', String(other === button));
+  });
+  renderFiles(true);
 }));
 $('file-search').addEventListener('input',() => renderFiles(true));
 $('join-form').addEventListener('submit',event => {event.preventDefault(); join(pendingInvite);});
 $('target-select').addEventListener('change',event => selectRecipient(event.target.value));
+$('file-target-select').addEventListener('change',event => selectRecipient(event.target.value));
 $('message-input').addEventListener('input',updateComposer);
 $('message-form').addEventListener('submit',sendMessage);
 $('choose-files').addEventListener('click',event => {event.stopPropagation(); $('file-input').click();});
@@ -602,21 +642,22 @@ $('shutdown').addEventListener('click',async () => {
   try {
     await api('/api/shutdown',{method:'POST',body:{}}); stopped = true; clearInterval(stateTimer);
     for (const item of queue) {item.status='paused';item.xhr?.abort();}
-    $('transfer-view').replaceChildren(); const message = el('div','stopped-message');
-    message.append(el('h2','','近传已退出'),el('p','','文件已保留。下次双击启动程序，即可再次连接。')); $('transfer-view').append(message);
+    setView(currentView);
     connection(false,'服务已关闭');
   } catch (error) {toast(error.message);}
 });
 let dragDepth = 0;
 document.addEventListener('dragenter',event => {
-  if (!state || !Array.from(event.dataTransfer?.types || []).includes('Files')) return;
+  if (!state || stopped || currentView !== 'files' || !Array.from(event.dataTransfer?.types || []).includes('Files')) return;
   event.preventDefault(); dragDepth++; $('drag-overlay').hidden = false;
 });
 document.addEventListener('dragover',event => {if (state) event.preventDefault();});
 document.addEventListener('dragleave',event => {event.preventDefault();dragDepth--;if (dragDepth<=0) {$('drag-overlay').hidden=true;dragDepth=0;}});
 document.addEventListener('drop',event => {
   event.preventDefault();dragDepth=0;$('drag-overlay').hidden=true;
-  if (state && event.dataTransfer?.files.length) addFiles(Array.from(event.dataTransfer.files));
+  if (!state || stopped || !event.dataTransfer?.files.length) return;
+  if (currentView !== 'files') { openView('files'); toast('请确认收件人，再拖入文件。'); return; }
+  addFiles(Array.from(event.dataTransfer.files));
 });
 window.addEventListener('beforeunload',event => {
   if (queue.some(item => ['uploading','completing','queued'].includes(item.status))) {event.preventDefault();event.returnValue='';}
@@ -625,12 +666,16 @@ document.addEventListener('visibilitychange',() => {if (!document.hidden) poll()
 window.addEventListener('online',poll);
 
 async function bootstrap() {
-  $('device-name').value = defaultDeviceName();
-  setView('transfer');
   const hash = new URLSearchParams(location.hash.slice(1));
   if (hash.has('admin')) {token=hash.get('admin');storage.set('token',token);}
   pendingInvite = hash.get('join') || '';
   if (location.hash) history.replaceState(null,'',location.pathname + location.search);
+  if (!token && !pendingInvite) {
+    document.documentElement.classList.add('m-enter');
+    setTimeout(() => document.documentElement.classList.add('m-enter-done'), 700);
+  }
+  $('device-name').value = defaultDeviceName();
+  setView(currentView);
   if (pendingInvite) {
     // Keep an already authenticated host session when testing its own QR link.
     if (token) await poll();

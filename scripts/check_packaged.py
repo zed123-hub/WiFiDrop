@@ -39,7 +39,10 @@ def main(executable):
             assert request('GET','/')[0]==200
             assert request('GET','/app.js')[0]==200
             assert request('GET','/style.css')[0]==200
-            assert request('GET','/room.css')[0]==200
+            assert request('GET','/motion.css')[0]==200
+            assert request('GET','/motion.js')[0]==200
+            for asset in ('moments.js', 'lib.js', 'liquid-type/moment.js', 'liquid-type/moment.css'):
+                assert request('GET','/moments/'+asset)[0]==200
             status,state=request('GET','/api/state'); assert status==200
             if state['urls']:
                 status,svg=request('GET','/api/qr'); assert status==200 and b'<svg' in svg and b'<path' in svg
